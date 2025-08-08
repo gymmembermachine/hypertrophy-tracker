@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hypertrophy Tracker</title>
+  <style>
+    :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--text:#e2e8f0;--accent:#22c55e}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0b1224,#0f172a);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu,'Helvetica Neue',Arial,sans-serif;color:var(--text)}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:8px 0 16px}
+    h1{font-size:20px;margin:0}
+    nav{display:flex;gap:6px;flex-wrap:wrap}
+    button,select,input,textarea{font:inherit}
+    .tab{border:1px solid #1f2937;background:#0b1220;color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
+    .tab.active{background:#111827;border-color:#1f2937;box-shadow:0 0 0 2px #1f2937 inset}
+    .card{background:rgba(17,24,39,.85);border:1px solid #1f2937;border-radius:14px;padding:14px}
+    .grid{display:grid;gap:10px}
+    .grid.cols-2{grid-template-columns:1fr 1fr}
+    .grid.cols-3{grid-template-columns:repeat(3,1fr)}
+    .grid.cols-4{grid-template-columns:repeat(4,1fr)}
+    @media (max-width:780px){.grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}}
+    label{font-size:12px;color:var(--muted)}
+    input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #1f2937;background:#0b1220;color:var(--text)}
+    input[type=\"date\"]{padding:9px 10px}
+    .btn{padding:10px 12px;border-radius:10px;border:1px solid #1f2937;background:#0b1220;color:var(--text);cursor:pointer}
+    .btn.primary{background:linear-gradient(90deg,#22c55e,#16a34a);border-color:#14532d;color:#03140a}
+    .btn.warning{background:#3b0a0a;border-color:#7f1d1d;color:#fecaca}
+    .row-actions{display:flex;gap:8px;flex-wrap:wrap}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid #1f2937;text-align:left;font-size:14px}
+    th{color:#a5b4fc;font-weight:600;background:#0b1220;position:sticky;top:0}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#0b1220;border:1px solid #1f2937;color:#9ca3af;font-size:12px}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class=\"wrap\">
+    <header>
+      <h1>Hypertrophy Tracker</h1>
+      <nav id=\"tabs\"></nav>
+    </header>
+
+    <section id=\"content\" class=\"grid\"></section>
+    <div class=\"muted\" style=\"margin-top:10px;font-size:12px\">Data saves locally in your browser. Export a backup periodically.</div>
+  </div>
+
+<script>
+// ====== Local App (v4) ======
+const LS_KEYS = { library: 'ht_lib_v4', log: 'ht_log_v4' }
+let editingId = null
+
+const defaultLibrary = [
+  ['Chest','Flat Barbell Bench Press'],['Chest','Incline Dumbbell Press'],['Chest','Cable Fly'],
+  ['Back','Pull-Up'],['Back','Barbell Row'],['Back','Lat Pulldown'],
+  ['Biceps','Barbell Curl'],['Biceps','Hammer Curl'],
+  ['Triceps','Triceps Pushdown'],['Triceps','Skull Crushers'],
+  ['Quads','Back Squat'],['Quads','Leg Press'],
+  ['Hams','Romanian Deadlift'],['Hams','Seated Leg Curl'],
+  ['Shoulders','Overhead Press'],['Shoulders','Lateral Raise']
+]
+const additions = [
+  ['Back','Pull-Up'],['Back','Lat Pdown'],['Back','Seated cable row'],['Back','Bent over row'],
+  ['Biceps','Barbell Curl'],['Biceps','Wide grip EZ curl'],['Biceps','EZ cable curl'],['Biceps','Single grip cable curl'],['Biceps','Incline DB Curl'],['Biceps','Hammer Curl'],['Biceps','EZ curl'],
+  ['Chest','Flat Barbell Bench Press'],['Chest','Incline DB Bench'],['Chest','Chest machine'],['Chest','Cable crossover'],['Chest','Fly machine'],['Chest','DB fly'],['Chest','Incline smith press'],['Chest','Flat smith press'],['Chest','Incline bench press'],
+  ['Hams','Romanian Deadlift'],['Hams','Leg curl'],['Hams','Deadlift'],['Hams','TB DL'],['Hams','Deficit TB DL'],
+  ['Quads','Back Squat'],['Quads','Leg press'],['Quads','Leg ext'],['Quads','BW squat'],['Quads','FSquat'],['Quads','Box FSquat'],['Quads','Box squat'],['Quads','1/2 squat'],['Quads','Smith machine BS'],['Quads','Smith FS'],
+  ['Shoulders','Overhead Press'],['Shoulders','Cable lat raise'],['Shoulders','Seated lat raise'],['Shoulders','Cable UR row'],['Shoulders','EZ UR row'],['Shoulders','Muscle snatch'],['Shoulders','Machine press'],['Shoulders','DB shoulder press'],
+  ['Triceps','Triceps Pushdown'],['Triceps','JM press'],['Triceps','DB skull crusher'],['Triceps','OVH cable extension'],['Triceps','EZ skull standing'],['Triceps','DB rolling skull crusher'],['Triceps','EZ skull crusher into CGBP'],['Triceps','CG bench press'],['Triceps','Smith CG bench press']
+]
+
+let library = load(LS_KEYS.library, defaultLibrary)
+mergeAdditionsIntoLibrary()
+let log = load(LS_KEYS.log, [])
+
+function load(key, fb){ try{const r=localStorage.getItem(key); return r?JSON.parse(r):fb }catch(e){ return fb } }
+function save(key,val){ localStorage.setItem(key, JSON.stringify(val)) }
+function mergeAdditionsIntoLibrary(){
+  const exists=(bp,ex)=> library.some(([b,e])=> b.toLowerCase()===bp.toLowerCase() && e.toLowerCase()===ex.toLowerCase())
+  let added=0; for(const [bp,ex] of additions){ if(!exists(bp,ex)){ library.push([bp,ex]); added++ } }
+  if(added>0) save(LS_KEYS.library, library)
+}
+
+const fmtDate = d=> new Date(d).toLocaleDateString()
+function mondayOf(dateStr){ const d=new Date(dateStr); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d }
+const uniq = a=>[...new Set(a)]
+
+// Tabs
+const routes=[{id:'log',label:'Log Workout'},{id:'library',label:'Exercise Library'},{id:'history',label:'Exercise History'},{id:'volume',label:'Weekly Volume'},{id:'backup',label:'Export / Import'}]
+let active='log'
+const tabsEl=document.getElementById('tabs'); const contentEl=document.getElementById('content')
+function renderTabs(){ tabsEl.innerHTML=''; routes.forEach(r=>{ const b=document.createElement('button'); b.className='tab'+(active===r.id?' active':''); b.textContent=r.label; b.onclick=()=>{active=r.id; render()}; tabsEl.appendChild(b) }) }
+function render(){ renderTabs(); if(active==='log') renderLog(); else if(active==='library') renderLibrary(); else if(active==='history') renderHistory(); else if(active==='volume') renderVolume(); else renderBackup(); }
+
+function bodyParts(){ return uniq(library.map(([bp])=>bp)).sort() }
+function exercisesFor(bp){ return library.filter(([b])=>b===bp).map(([,ex])=>ex).sort() }
+
+// ---- LOG (inline last-3 history + PR, with Edit/Delete) ----
+function renderLog(){
+  contentEl.innerHTML=''
+  const card=document.createElement('div'); card.className='card'
+  const form=document.createElement('div'); form.className='grid cols-4'
+
+  const date = inputField('Date','date', new Date().toISOString().slice(0,10))
+  const bpSel = selectField('Body Part', bodyParts())
+  const exSel = selectField('Exercise', [])
+  const weight = inputField('Weight (lb/kg)','number','')
+  const setInputs=[]; for(let i=1;i<=7;i++) setInputs.push(inputField(`Set ${i} reps`,'number',''))
+  const notes = textField('Notes','')
+
+  function fillExerciseOptions(){ const bp=bpSel.input.value; const list=bp?exercisesFor(bp):uniq(library.map(x=>x[1])).sort(); exSel.input.innerHTML='<option value=\"\">Select exercise…</option>'+list.map(v=>`<option>${esc(v)}</option>`).join('') }
+  function syncAutofillFromExercise(){ const ex=exSel.input.value; if(!ex) return; const row=library.find(([bp,e])=>e===ex); if(row){ bpSel.input.value=row[0]; fillExerciseOptions(); exSel.input.value=ex } }
+  bpSel.input.onchange=()=>{ fillExerciseOptions(); syncAutofillFromExercise(); renderInlineHistory() }
+  exSel.input.onchange=()=>{ syncAutofillFromExercise(); renderInlineHistory() }
+  fillExerciseOptions()
+
+  const actions=document.createElement('div'); actions.style.display='flex'; actions.style.gap='10px'; actions.style.flexWrap='wrap'; actions.style.alignItems='end'
+  const addBtn=document.createElement('button'); addBtn.className='btn primary'; addBtn.textContent='Add to Log'
+  const cancelBtn=document.createElement('button'); cancelBtn.className='btn'; cancelBtn.textContent='Cancel Edit'; cancelBtn.style.display='none'
+
+  addBtn.onclick=()=>{
+    const entry={ id: editingId || (Date.now().toString(36)+Math.random().toString(36).slice(2)), date:date.input.value, weekStart:mondayOf(date.input.value).toISOString().slice(0,10), bodyPart:bpSel.input.value, exercise:exSel.input.value, weight:weight.input.value, sets:setInputs.map(s=>Number(s.input.value||0)), notes:notes.input.value }
+    if(!entry.date||!entry.exercise||!entry.bodyPart){ alert('Date, Body Part, and Exercise are required.'); return }
+    const idx = log.findIndex(r=> r.id===editingId)
+    if(idx>-1){ log[idx]=entry; editingId=null; addBtn.textContent='Add to Log'; cancelBtn.style.display='none' } else { log.push(entry) }
+    save(LS_KEYS.log, log); setInputs.forEach(s=>s.input.value=''); notes.input.value=''; renderRecentTable(); renderInlineHistory()
+  }
+  cancelBtn.onclick=()=>{ editingId=null; addBtn.textContent='Add to Log'; cancelBtn.style.display='none'; setInputs.forEach(s=>s.input.value=''); notes.input.value='' }
+
+  actions.append(addBtn, cancelBtn)
+
+  ;[date,bpSel,exSel,weight,...setInputs,notes].forEach(el=> form.appendChild(el.wrap))
+  card.append(form, actions)
+
+  // Inline PR + last-3 history
+  const histCard=document.createElement('div'); histCard.className='card'; histCard.style.marginTop='12px'
+  const histTitle=document.createElement('h3'); histTitle.textContent='Last 3 Sessions (selected exercise)'; histTitle.style.margin='0 0 6px 0'; histTitle.style.fontSize='16px'; histTitle.style.color='var(--muted)'
+  const prDiv = document.createElement('div'); prDiv.className='muted'; prDiv.style.margin='6px 0 8px 0'
+  const histTable=document.createElement('table'); histTable.id='inlineHistoryTbl'
+  histTable.innerHTML=`<thead><tr><th>Date</th><th>Weight</th>${Array.from({length:7},(_,i)=>`<th>S${i+1}</th>`).join('')}<th>Notes</th></tr></thead><tbody></tbody>`
+  histCard.append(histTitle, prDiv, histTable)
+
+  // Recent table with actions
+  const tblWrap=document.createElement('div'); tblWrap.className='card'; tblWrap.style.marginTop='12px'
+  const h=document.createElement('h3'); h.textContent='Recent Entries'; h.style.marginTop='0'; h.style.fontSize='16px'; h.style.color='var(--muted)'
+  const table=document.createElement('table'); table.id='recentTable'
+  table.innerHTML=`<thead><tr><th>Date</th><th>Week</th><th>Body Part</th><th>Exercise</th><th>Weight</th>${Array.from({length:7},(_,i)=>`<th>S${i+1}</th>`).join('')}<th>Notes</th><th>Actions</th></tr></thead><tbody></tbody>`
+  tblWrap.append(h, table)
+
+  contentEl.append(card, histCard, tblWrap)
+  renderRecentTable(); renderInlineHistory()
+
+  function renderRecentTable(){
+    const tbody=document.querySelector('#recentTable tbody'); if(!tbody) return; tbody.innerHTML=''
+    const rows=[...log].sort((a,b)=> new Date(b.date)-new Date(a.date)).slice(0,50)
+    for(const r of rows){
+      const tr=document.createElement('tr')
+      tr.innerHTML=`<td>${esc(fmtDate(r.date))}</td><td><span class=\"pill\">${esc(fmtDate(r.weekStart))}</span></td><td>${esc(r.bodyPart)}</td><td>${esc(r.exercise)}</td><td>${esc(r.weight||'')}</td>${r.sets.map(n=>`<td>${n||''}</td>`).join('')}<td>${esc(r.notes||'')}</td><td class=\"row-actions\"></td>`
+      const actionsTd = tr.querySelector('.row-actions')
+      const editBtn = document.createElement('button'); editBtn.className='btn'; editBtn.textContent='Edit'
+      editBtn.onclick=()=>{ beginEdit(r) }
+      const delBtn = document.createElement('button'); delBtn.className='btn warning'; delBtn.textContent='Delete'
+      delBtn.onclick=()=>{ if(confirm('Delete this session?')){ log = log.filter(x=> x.id!==r.id); save(LS_KEYS.log, log); renderRecentTable(); renderInlineHistory() } }
+      actionsTd.append(editBtn, delBtn)
+      tbody.appendChild(tr)
+    }
+  }
+
+  function beginEdit(r){
+    editingId = r.id
+    const dateInput=document.querySelector('input[type=\"date\"]')
+    dateInput.value = r.date
+    bpSel.input.value = r.bodyPart; fillExerciseOptions(); exSel.input.value = r.exercise
+    weight.input.value = r.weight||''
+    ;(r.sets||[]).forEach((v,i)=>{ if(setInputs[i]) setInputs[i].input.value = v||'' })
+    notes.input.value = r.notes||''
+    addBtn.textContent = 'Save Changes'; cancelBtn.style.display='inline-block'
+    renderInlineHistory()
+  }
+
+  function renderInlineHistory(){
+    const tbody=document.querySelector('#inlineHistoryTbl tbody'); if(!tbody) return; tbody.innerHTML=''
+    const ex=exSel.input.value
+    // PR banner (best set by e1RM if weight present; otherwise by max reps)
+    const setPR = txt => prDiv.textContent = txt||''
+    if(!ex){ setPR(''); const tr=document.createElement('tr'); tr.innerHTML=`<td class=\"muted\" colspan=\"10\">Select an exercise to see its last 3 sessions.</td>`; tbody.appendChild(tr); return }
+    const rowsAll=log.filter(r=>r.exercise===ex).sort((a,b)=> new Date(b.date)-new Date(a.date))
+
+    let best=null
+    for(const r of rowsAll){
+      const reps = Math.max(0, ...r.sets.filter(n=>Number(n)>0))
+      if(!reps) continue
+      const w = Number(r.weight||0)
+      const score = w>0 ? (w*(1+reps/30)) : reps // Epley e1RM vs. reps-only fallback
+      if(!best || score>best.score){ best={date:r.date, weight:w, reps, score} }
+    }
+    if(best){
+      const prText = best.weight>0 ? `PR: ${best.weight} × ${best.reps} (e1RM ${Math.round(best.score)}) on ${fmtDate(best.date)}` : `PR: ${best.reps} reps on ${fmtDate(best.date)}`
+      setPR(prText)
+    } else { setPR('No PR yet — log a session to start tracking best set.') }
+
+    const rows=rowsAll.slice(0,3)
+    if(rows.length===0){ const tr=document.createElement('tr'); tr.innerHTML=`<td class=\"muted\" colspan=\"10\">No history yet for ${esc(ex)}.</td>`; tbody.appendChild(tr); return }
+    for(const r of rows){
+      const tr=document.createElement('tr')
+      tr.innerHTML=`<td>${esc(fmtDate(r.date))}</td><td>${esc(r.weight||'')}</td>${r.sets.map(n=>`<td>${n||''}</td>`).join('')}<td>${esc(r.notes||'')}</td>`
+      tbody.appendChild(tr)
+    }
+  }
+}
+
+// ---- LIBRARY ----
+function renderLibrary(){
+  contentEl.innerHTML=''
+  const card=document.createElement('div'); card.className='card grid cols-2'
+  const bpSel=selectField('Body Part', bodyParts())
+  const exName=inputField('Exercise name','text','')
+  const add=document.createElement('button'); add.className='btn primary'; add.textContent='Add Exercise'
+  add.onclick=()=>{ const bp=bpSel.input.value.trim(), ex=exName.input.value.trim(); if(!bp||!ex) return alert('Pick a body part and enter an exercise name.'); if(library.find(([b,e])=>b===bp && e.toLowerCase()===ex.toLowerCase())) return alert('That exercise already exists for this body part.'); library.push([bp,ex]); save(LS_KEYS.library, library); exName.input.value=''; renderTable() }
+  card.append(bpSel.wrap, exName.wrap, add)
+
+  const tblCard=document.createElement('div'); tblCard.className='card'
+  const table=document.createElement('table')
+  table.innerHTML='<thead><tr><th>Body Part</th><th>Exercise</th><th></th></tr></thead><tbody></tbody>'
+  tblCard.appendChild(table)
+  contentEl.append(card, tblCard)
+  renderTable()
+
+  function renderTable(){
+    const tbody=table.querySelector('tbody'); tbody.innerHTML=''
+    const rows=[...library].sort((a,b)=> a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]))
+    rows.forEach(([bp,ex])=>{
+      const tr=document.createElement('tr')
+      const rm=document.createElement('button'); rm.className='btn warning'; rm.textContent='Delete'
+      rm.onclick=()=>{ const i=library.findIndex(x=> x[0]===bp && x[1]===ex); if(i>-1){ library.splice(i,1); save(LS_KEYS.library, library); renderTable() } }
+      tr.innerHTML=`<td>${esc(bp)}</td><td>${esc(ex)}</td><td></td>`
+      tr.lastChild.appendChild(rm)
+      tbody.appendChild(tr)
+    })
+  }
+}
+
+// ---- HISTORY ----
+function renderHistory(){
+  contentEl.innerHTML=''
+  const card=document.createElement('div'); card.className='card grid cols-3'
+  const exSel=selectField('Exercise', uniq(library.map(x=>x[1])).sort())
+  const load=document.createElement('button'); load.className='btn primary'; load.textContent='Load History'
+  const tblCard=document.createElement('div'); tblCard.className='card'
+  const table=document.createElement('table')
+  table.innerHTML=`<thead><tr><th>Date</th><th>Body Part</th><th>Weight</th>${Array.from({length:7},(_,i)=>`<th>S${i+1}</th>`).join('')}<th>Notes</th></tr></thead><tbody></tbody>`
+  load.onclick=()=>{ const ex=exSel.input.value; const tbody=table.querySelector('tbody'); tbody.innerHTML=''; const rows=log.filter(r=>r.exercise===ex).sort((a,b)=> new Date(b.date)-new Date(a.date)); for(const r of rows){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${esc(fmtDate(r.date))}</td><td>${esc(r.bodyPart)}</td><td>${esc(r.weight||'')}</td>${r.sets.map(n=>`<td>${n||''}</td>`).join('')}<td>${esc(r.notes||'')}</td>`; tbody.appendChild(tr) } }
+  card.append(exSel.wrap, load)
+  tblCard.appendChild(table)
+  contentEl.append(card, tblCard)
+}
+
+// ---- WEEKLY VOLUME + LINE CHART ----
+function renderVolume(){
+  contentEl.innerHTML=''
+  const card=document.createElement('div'); card.className='card'
+  const controls=document.createElement('div'); controls.className='grid cols-4'
+  const from=inputField('From (date)','date',''); const to=inputField('To (date)','date','')
+  const bp=selectField('Body Part', ['All', ...bodyParts()]); bp.input.value='All'
+  const apply=document.createElement('button'); apply.className='btn primary'; apply.textContent='Apply'
+  controls.append(from.wrap, to.wrap, bp.wrap, apply)
+
+  const intro=document.createElement('div'); intro.className='muted'; intro.textContent='Line chart of weekly set volume. If no dates selected, shows all.'
+  const table=document.createElement('table'); table.innerHTML='<thead><tr><th>Week</th><th>Body Part</th><th>Total Sets</th></tr></thead><tbody></tbody>'
+  const tbody=table.querySelector('tbody')
+  const chartCard=document.createElement('div'); chartCard.className='card'; chartCard.style.marginTop='12px'
+  const canvas=document.createElement('canvas'); canvas.width=900; canvas.height=300; chartCard.appendChild(canvas)
+
+  card.append(controls, intro, table, chartCard); contentEl.append(card)
+
+  function weeklyRows(){
+    const start = from.input.value? new Date(from.input.value): null
+    const end = to.input.value? new Date(to.input.value): null
+    const only = bp.input.value && bp.input.value!=='All' ? bp.input.value : null
+    const byKey=new Map()
+    for(const r of log){
+      const d=new Date(r.date); if(start && d<start) continue; if(end && d>end) continue; if(only && r.bodyPart!==only) continue
+      const week=mondayOf(r.date).toISOString().slice(0,10); const k=week+'|'+r.bodyPart; const sets=(r.sets||[]).filter(n=>Number(n)>0).length; if(sets===0) continue; byKey.set(k,(byKey.get(k)||0)+sets)
+    }
+    return [...byKey.entries()].map(([k,v])=>{ const [w,bp]=k.split('|'); return {week:w,bp,total:v} }).sort((a,b)=> new Date(a.week)-new Date(b.week) || a.bp.localeCompare(b.bp))
+  }
+
+  function renderTable(){
+    const rows=weeklyRows(); tbody.innerHTML=rows.map(r=>`<tr><td>${esc(fmtDate(r.week))}</td><td>${esc(r.bp)}</td><td>${r.total}</td></tr>`).join('')
+  }
+
+  function renderChart(){
+    const ctx=canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height)
+    const rows=weeklyRows(); if(rows.length===0){ ctx.fillStyle='#94a3b8'; ctx.fillText('No data for selection.', 10, 20); return }
+    const weeks=[...new Set(rows.map(r=>r.week))].sort((a,b)=> new Date(a)-new Date(b))
+    const groups = bp.input.value==='All' ? [...new Set(rows.map(r=>r.bp))].sort() : [bp.input.value]
+    const padding=40, w=canvas.width-padding*2, h=canvas.height-padding*2
+    const maxY=Math.max(1, ...rows.map(r=>r.total))
+    const xStep = Math.max(1, weeks.length-1)
+    const xPos = i => padding + (i*(w/xStep))
+    const yPos = v => padding + h - (v/maxY)*h
+
+    // axes
+    ctx.strokeStyle='#324155'; ctx.beginPath(); ctx.moveTo(padding,padding); ctx.lineTo(padding,padding+h); ctx.lineTo(padding+w,padding+h); ctx.stroke()
+    ctx.fillStyle='#94a3b8'; ctx.font='12px system-ui';
+    for(let t=0;t<=maxY;t++){ const y=yPos(t); ctx.fillText(String(t), 6, y+4); ctx.strokeStyle='rgba(50,65,85,0.3)'; ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(padding+w,y); ctx.stroke() }
+    const step = weeks.length>16?2:1
+    for(let i=0;i<weeks.length;i+=step){ const x=xPos(i); ctx.save(); ctx.translate(x, padding+h+14); ctx.rotate(-Math.PI/4); ctx.fillText(new Date(weeks[i]).toLocaleDateString(), 0, 0); ctx.restore() }
+
+    const hues=[200,20,120,45,280,330,90]
+    const colorFor=i=>`hsl(${hues[i%hues.length]} 70% 55%)`
+
+    groups.forEach((g,gi)=>{
+      ctx.strokeStyle=colorFor(gi); ctx.lineWidth=2; ctx.beginPath();
+      weeks.forEach((wk,wi)=>{
+        const yVal = (rows.find(r=> r.week===wk && r.bp===g)||{total:0}).total
+        const x=xPos(wi), y=yPos(yVal)
+        if(wi===0) ctx.moveTo(x,y); else ctx.lineTo(x,y)
+        ctx.fillStyle=colorFor(gi); ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill()
+      })
+      ctx.stroke()
+      // legend
+      ctx.fillStyle=colorFor(gi); ctx.fillRect(padding+w-110, padding+gi*18-10, 10,10)
+      ctx.fillStyle='#e2e8f0'; ctx.fillText(g, padding+w-94, padding+gi*18)
+    })
+  }
+
+  function renderAll(){ renderTable(); renderChart() }
+  apply.onclick = renderAll
+  renderAll()
+}
+
+// ---- BACKUP ----
+function renderBackup(){
+  contentEl.innerHTML=''
+  const card=document.createElement('div'); card.className='card grid cols-2'
+  const exp=document.createElement('button'); exp.className='btn primary'; exp.textContent='Export JSON (Library + Log)'
+  exp.onclick=()=>{ const data=JSON.stringify({library,log},null,2); const blob=new Blob([data],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='hypertrophy_tracker_backup.json'; a.click(); URL.revokeObjectURL(url) }
+  const imp=document.createElement('input'); imp.type='file'; imp.accept='.json'; imp.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const o=JSON.parse(rd.result); if(o.library) library=o.library; if(o.log) log=o.log; save(LS_KEYS.library,library); save(LS_KEYS.log,log); alert('Import complete.'); render() }catch(err){ alert('Import failed: '+err.message) } }; rd.readAsText(f) }
+  card.append(exp, imp); contentEl.append(card)
+}
+
+// Helpers
+function inputField(labelText, type='text', value=''){
+  const wrap=document.createElement('div'); const label=document.createElement('label'); label.textContent=labelText; const input=document.createElement('input'); input.type=type; input.value=value; wrap.className='grid'; wrap.append(label,input); return {wrap,input}
+}
+function textField(labelText, value=''){
+  const wrap=document.createElement('div'); const label=document.createElement('label'); label.textContent=labelText; const input=document.createElement('textarea'); input.rows=2; input.value=value; wrap.className='grid'; wrap.append(label,input); return {wrap,input}
+}
+function selectField(labelText, options){
+  const wrap=document.createElement('div'); const label=document.createElement('label'); label.textContent=labelText; const select=document.createElement('select'); select.innerHTML='<option value=\"\">Select…</option>'+options.map(o=>`<option>${esc(o)}</option>`).join(''); wrap.className='grid'; wrap.append(label,select); return {wrap,input:select}
+}
+function esc(s){ return String(s??'').replace(/[&<>\"']/g, c=>({\"&\":\"&amp;\",\"<\":\"&lt;\",\"\\\"\":\"&quot;\",\"'\":\"&#39;\"}[c])) }
+
+render()
+</script>
+</body>
+</html>
