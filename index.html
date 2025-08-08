@@ -1,14 +1,410 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Hypertrophy Tracker v4.2</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💪</text></svg>">
+<style>
+  :root{
+    --bg:#0f172a; --bg2:#0b1220; --card:rgba(17,24,39,.9); --border:#1f2937; --ink:#e2e8f0; --muted:#94a3b8; --accent:#22c55e; --accent2:#16a34a;
+  }
+  *{box-sizing:border-box}
+  html{font-size:16px}
+  body{margin:0;background:linear-gradient(180deg,var(--bg2),var(--bg));color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;line-height:1.35}
+  header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;background:#0b1220;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+  h1{font-size:18px;margin:0}
+  main{max-width:100%;padding:12px}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap}
+  .tab{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0b1220;color:#var(--ink);cursor:pointer}
+  .tab.active{background:#111827;box-shadow:0 0 0 2px var(--border) inset}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin:10px 0}
+  .grid{display:grid;gap:10px}
+  /* Mobile-first: single column by default */
+  .grid.c2{grid-template-columns:1fr}
+  .grid.c3{grid-template-columns:1fr}
+  .grid.c4{grid-template-columns:1fr}
+  /* Up-shift on larger screens */
+  @media (min-width:700px){.grid.c2{grid-template-columns:1fr 1fr}}
+  @media (min-width:900px){.grid.c3{grid-template-columns:repeat(3,1fr)}.grid.c4{grid-template-columns:repeat(4,1fr)}}
+  label{font-size:12px;color:var(--muted)}
+  input,select,button{font:inherit}
+  input,select,textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--border);background:#0b1220;color:var(--ink)}
+  input[type="date"]{padding:11px}
+  .btn{padding:12px;border-radius:12px;border:1px solid var(--border);background:#0b1220;color:var(--ink);cursor:pointer;width:100%}
+  .btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border-color:#14532d;color:#071b10}
+  .btn.warn{background:#3b0a0a;border-color:#7f1d1d;color:#fecaca}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
+  th{position:sticky;top:0;background:#0b1220;color:#a5b4fc}
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#0b1220;border:1px solid var(--border);color:#9ca3af;font-size:12px}
+  .muted{color:var(--muted)}
+  .chart-wrap{height:300px;max-height:55vh}
+  canvas{background:#0b1220;border:1px solid var(--border);border-radius:12px;width:100%;height:100%}
+  footer{color:var(--muted);text-align:center;font-size:12px;padding:10px}
+  .banner{background:#0b3b0e;border:1px solid #14532d;color:#c0f2c3;padding:10px;border-radius:10px;margin:10px 0}
+</style>
 </head>
 <body>
-<h1>Hypertrophy Tracker</h1>
-<p>Data saves locally in your browser. Export a backup periodically.</p>
-<footer>v4.2</footer>
+  <header>
+    <h1>Hypertrophy Tracker</h1>
+    <nav class="tabs" id="tabs"></nav>
+  </header>
+  <main>
+    <div id="backupBanner" class="banner" style="display:none"></div>
+    <section id="content"></section>
+    <footer>v4.2</footer>
+  </main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// ===== FIX: avoid duplicate globals =====
+window.HT = window.HT || {};
+
+// --- Local Storage Keys ---
+HT.keys = HT.keys || { data:'hypertrophyDataV42', library:'ht_lib_v42', remindEnabled:'ht_rem_en', remindNext:'ht_rem_next' };
+
+// --- Default Exercise Library (FULL set you provided) ---
+// Guard against re-definition across hot reloads / re-injection
+window.DEFAULT_LIBRARY = window.DEFAULT_LIBRARY || {
+  "Chest": [
+    "Flat Barbell Bench Press","Incline DB Bench","Chest machine","Cable crossover","Fly machine","DB fly",
+    "Incline smith press","Flat smith press","Incline bench press"
+  ],
+  "Back": ["Pull-Up","Lat Pdown","Seated cable row","Bent over row"],
+  "Biceps": [
+    "Barbell Curl","Wide grip EZ curl","EZ cable curl","Single grip cable curl",
+    "Incline DB Curl","Hammer Curl","EZ curl"
+  ],
+  "Triceps": [
+    "Triceps Pushdown","JM press","DB skull crusher","OVH cable extension","EZ skull standing",
+    "DB rolling skull crusher","EZ skull crusher into CGBP","CG bench press","Smith CG bench press"
+  ],
+  "Quads": [
+    "Back Squat","Leg press","Leg ext","BW squat","FSquat","Box FSquat","Box squat",
+    "1/2 squat","Smith machine BS","Smith FS"
+  ],
+  "Hams": ["Romanian Deadlift","Leg curl","Deadlift","TB DL","Deficit TB DL"],
+  "Shoulders": [
+    "Overhead Press","Cable lat raise","Seated lat raise","Cable UR row","EZ UR row",
+    "Muscle snatch","Machine press","DB shoulder press"
+  ]
+};
+
+// Load Library from LS or seed with defaults (deep clone)
+HT.library = HT.library || (JSON.parse(localStorage.getItem(HT.keys.library) || 'null') || JSON.parse(JSON.stringify(window.DEFAULT_LIBRARY)));
+function saveLibrary(){ localStorage.setItem(HT.keys.library, JSON.stringify(HT.library)); }
+
+// Initialize reminder flags if missing
+if(localStorage.getItem(HT.keys.remindEnabled)===null){ localStorage.setItem(HT.keys.remindEnabled,'1'); }
+if(localStorage.getItem(HT.keys.remindNext)===null){ localStorage.setItem(HT.keys.remindNext, String(Date.now()+7*24*3600*1000)); }
+
+// Load sessions
+HT.sessions = HT.sessions || JSON.parse(localStorage.getItem(HT.keys.data) || '[]');
+function save(){ localStorage.setItem(HT.keys.data, JSON.stringify(HT.sessions)); }
+
+// --- UI Router ---
+const routes=[
+  {id:'log',label:'Log Workout'},
+  {id:'history',label:'Exercise History'},
+  {id:'volume',label:'Weekly Volume'},
+  {id:'library',label:'Exercise Library'},
+  {id:'backup',label:'Export / Import'}
+];
+let active='log';
+const tabsEl=document.getElementById('tabs');
+const content=document.getElementById('content');
+function renderTabs(){ tabsEl.innerHTML=''; routes.forEach(r=>{ const b=document.createElement('button'); b.className='tab'+(active===r.id?' active':''); b.textContent=r.label; b.onclick=()=>{active=r.id; render()}; tabsEl.appendChild(b) }) }
+function render(){ renderTabs(); if(active==='log') viewLog(); else if(active==='history') viewHistory(); else if(active==='volume') viewVolume(); else if(active==='library') viewLibrary(); else viewBackup(); renderBanner(); }
+
+// --- Helpers ---
+const uniq = a=>[...new Set(a)];
+const fmtDate = d=> new Date(d).toLocaleDateString();
+const mondayOf = s=>{ const d=new Date(s); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d };
+function bodyParts(){ return Object.keys(HT.library).sort(); }
+function exercisesFor(bp){ return (HT.library[bp]||[]).slice().sort(); }
+
+// --- Backup Reminder Banner ---
+function renderBanner(){
+  const el=document.getElementById('backupBanner');
+  const enabled = localStorage.getItem(HT.keys.remindEnabled)==='1';
+  const next = Number(localStorage.getItem(HT.keys.remindNext)||0);
+  if(!enabled || Date.now()<next){ el.style.display='none'; return }
+  el.style.display='block';
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+    <div><strong>Backup reminder:</strong> It\'s been a week. Download a JSON backup so you never lose progress.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" id="bnrExp">Export now</button>
+      <button class="btn" id="bnrSnooze">Snooze 7d</button>
+      <button class="btn" id="bnrDis">Disable</button>
+    </div>
+  </div>`;
+  document.getElementById('bnrExp').onclick=exportJSON;
+  document.getElementById('bnrSnooze').onclick=()=>{ localStorage.setItem(HT.keys.remindNext, String(Date.now()+7*24*3600*1000)); el.style.display='none' };
+  document.getElementById('bnrDis').onclick=()=>{ localStorage.setItem(HT.keys.remindEnabled,'0'); el.style.display='none' };
+}
+
+// --- View: Log Workout ---
+function viewLog(){
+  content.innerHTML='';
+  const card=document.createElement('div'); card.className='card';
+  const form=document.createElement('div'); form.className='grid c4';
+
+  const date = field('Date','date', new Date().toISOString().slice(0,10));
+  const bp = selectField('Body Part', bodyParts());
+  const ex = selectField('Exercise', []);
+  const weight = field('Weight (lb/kg)','number','');
+  const sets = Array.from({length:7},(_,i)=> field(`Set ${i+1} reps`,'number',''));
+  const notes = textarea('Notes','');
+  const actions=document.createElement('div'); actions.style.display='grid'; actions.style.gridTemplateColumns='1fr'; actions.style.gap='10px';
+  const add=document.createElement('button'); add.className='btn primary'; add.textContent='Add to Log';
+  const backupNow=document.createElement('button'); backupNow.className='btn'; backupNow.textContent='Download backup now'; backupNow.onclick=exportJSON;
+
+  // Options + auto-fill
+  function refreshExercises(selected){
+    const list = bp.input.value?exercisesFor(bp.input.value):uniq(Object.values(HT.library).flat());
+    ex.input.innerHTML='<option value="">Select…</option>'+ list.map(x=>`<option>${esc(x)}</option>`).join('');
+    if(selected){ ex.input.value = selected; }
+  }
+  bp.input.onchange=()=>{ refreshExercises(ex.input.value); renderInlineHistory() };
+  ex.input.onchange=()=>{ // auto-pick bodypart from exercise; preserve selection during refresh
+    const chosen = ex.input.value; // CACHE before refresh
+    const found = Object.entries(HT.library).find(([k,v])=> v.includes(chosen));
+    if(found){
+      bp.input.value = found[0];
+      refreshExercises(chosen); // re-render list and re-select chosen
+    }
+    renderInlineHistory();
+  };
+  refreshExercises();
+
+  add.onclick=()=>{
+    const entry={
+      id: Date.now().toString(36)+Math.random().toString(36).slice(2),
+      date: date.input.value,
+      week: mondayOf(date.input.value).toISOString().slice(0,10),
+      bodypart: bp.input.value,
+      exercise: ex.input.value,
+      weight: Number(weight.input.value||0),
+      sets: sets.map(s=> Number(s.input.value||0) ),
+      notes: notes.input.value||''
+    };
+    if(!entry.date || !entry.exercise || !entry.bodypart){ alert('Date, Body Part, and Exercise are required.'); return }
+    HT.sessions.push(entry); save(); sets.forEach(s=> s.input.value=''); notes.input.value=''; renderRecent(); renderInlineHistory();
+  };
+
+  ;[date.wrap,bp.wrap,ex.wrap,weight.wrap,...sets.map(s=>s.wrap),notes.wrap].forEach(el=> form.appendChild(el));
+  actions.append(add, backupNow);
+  card.append(form, actions);
+  content.appendChild(card);
+
+  // Inline history + PR
+  const hist=document.createElement('div'); hist.className='card';
+  hist.innerHTML = `<h3 style="margin:0 0 6px 0;color:var(--muted)">Last 3 Sessions (selected exercise)</h3>
+  <div class="muted" id="prLine"></div>
+  <div class="table-wrap"><table id="inlineTbl"><thead><tr><th>Date</th><th>Weight</th>${Array.from({length:7},(_,i)=>`<th>S${i+1}</th>`).join('')}<th>Notes</th></tr></thead><tbody></tbody></table></div>`;
+  content.appendChild(hist);
+
+  function renderInlineHistory(){
+    const tbody = hist.querySelector('#inlineTbl tbody'); tbody.innerHTML='';
+    const exName = ex.input.value; const prLine=document.getElementById('prLine');
+    if(!exName){ prLine.textContent=''; tbody.innerHTML=`<tr><td class="muted" colspan="10">Select an exercise to see its history.</td></tr>`; return }
+    const rows = HT.sessions.filter(r=> r.exercise===exName).sort((a,b)=> new Date(b.date)-new Date(a.date));
+    // PR via Epley estimate (weight*(1+reps/30)) or reps-only fallback
+    let best=null; rows.forEach(r=>{ const reps=Math.max(0,...r.sets); const w=Number(r.weight||0); const score = w>0? (w*(1+reps/30)) : reps; if(!best || score>best.score) best={date:r.date,weight:w,reps,score}; });
+    prLine.textContent = best? (best.weight>0? `PR: ${best.weight} × ${best.reps} (e1RM ${Math.round(best.score)}) on ${fmtDate(best.date)}` : `PR: ${best.reps} reps on ${fmtDate(best.date)}`) : 'No PR yet — log a session to start tracking best set.';
+    rows.slice(0,3).forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${fmtDate(r.date)}</td><td>${r.weight||''}</td>${r.sets.map(n=>`<td>${n||''}</td>`).join('')}<td>${esc(r.notes||'')}</td>`; tbody.appendChild(tr) })
+    if(rows.length===0) tbody.innerHTML=`<tr><td class="muted" colspan="10">No sessions yet for ${esc(exName)}.</td></tr>`;
+  }
+
+  // Recent entries with delete
+  const recent=document.createElement('div'); recent.className='card';
+  recent.innerHTML = `<h3 style="margin:0 0 6px 0;color:var(--muted)">Recent Entries</h3>
+  <div class="table-wrap"><table id="recentTbl"><thead><tr><th>Date</th><th>Week</th><th>Body Part</th><th>Exercise</th><th>Weight</th>${Array.from({length:7},(_,i)=>`<th>S${i+1}</th>`).join('')}<th>Notes</th><th></th></tr></thead><tbody></tbody></table></div>`;
+  content.appendChild(recent);
+
+  function renderRecent(){
+    const tbody=recent.querySelector('#recentTbl tbody'); tbody.innerHTML='';
+    [...HT.sessions].sort((a,b)=> new Date(b.date)-new Date(a.date)).slice(0,50).forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td>${fmtDate(r.date)}</td><td><span class="pill">${fmtDate(r.week)}</span></td><td>${esc(r.bodypart)}</td><td>${esc(r.exercise)}</td><td>${r.weight||''}</td>${r.sets.map(n=>`<td>${n||''}</td>`).join('')}<td>${esc(r.notes||'')}</td><td><button class="btn warn">Delete</button></td>`;
+      tr.querySelector('button').onclick=()=>{ if(confirm('Delete this entry?')){ HT.sessions = HT.sessions.filter(x=> x!==r); save(); renderRecent(); renderInlineHistory(); }}
+      tbody.appendChild(tr);
+    })
+  }
+
+  renderRecent();
+  renderInlineHistory();
+}
+
+// --- View: Exercise History (full table by exercise) ---
+function viewHistory(){
+  content.innerHTML='';
+  const controls=document.createElement('div'); controls.className='card grid c3';
+  const exSel = selectField('Exercise', uniq(Object.values(HT.library).flat()));
+  const load=document.createElement('button'); load.className='btn primary'; load.textContent='Load History';
+  controls.append(exSel.wrap, load);
+  const tableCard=document.createElement('div'); tableCard.className='card';
+  tableCard.innerHTML='<div class="table-wrap"><table><thead><tr><th>Date</th><th>Body Part</th><th>Weight</th>'+Array.from({length:7},(_,i)=>`<th>S${i+1}</th>`).join('')+'<th>Notes</th></tr></thead><tbody id="histTbody"></tbody></table></div>';
+  content.append(controls, tableCard);
+  load.onclick=()=>{
+    const ex=exSel.input.value; const tbody=document.getElementById('histTbody'); tbody.innerHTML='';
+    [...HT.sessions].filter(r=> r.exercise===ex).sort((a,b)=> new Date(b.date)-new Date(a.date)).forEach(r=>{
+      const tr=document.createElement('tr'); tr.innerHTML=`<td>${fmtDate(r.date)}</td><td>${esc(r.bodypart)}</td><td>${r.weight||''}</td>${r.sets.map(n=>`<td>${n||''}</td>`).join('')}<td>${esc(r.notes||'')}</td>`; tbody.appendChild(tr);
+    });
+  };
+}
+
+// --- View: Weekly Volume chart ---
+function viewVolume(){
+  content.innerHTML='';
+  const card=document.createElement('div'); card.className='card';
+  const controls=document.createElement('div'); controls.className='grid c4';
+  const from = field('From (date)','date','');
+  const to = field('To (date)','date','');
+  const bp = selectField('Body Part', ['All',...bodyParts()]); bp.input.value='All';
+  const apply=document.createElement('button'); apply.className='btn primary'; apply.textContent='Apply';
+  controls.append(from.wrap,to.wrap,bp.wrap,apply); card.appendChild(controls);
+
+  const table=document.createElement('table'); table.innerHTML='<thead><tr><th>Week</th><th>Body Part</th><th>Total Sets</th></tr></thead><tbody id="volBody"></tbody>';
+  const chartCard=document.createElement('div'); chartCard.className='card chart-wrap'; const canvas=document.createElement('canvas'); chartCard.appendChild(canvas);
+  content.append(card, table, chartCard);
+
+  const ctx=canvas.getContext('2d');
+  let chart = new Chart(ctx,{ type:'line', data:{ labels:[], datasets:[] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{color:'#e2e8f0'}}}, scales:{x:{ticks:{color:'#94a3b8'}}, y:{ticks:{color:'#94a3b8'}}}} });
+
+  function weeklyRows(){
+    const start = from.input.value? new Date(from.input.value): null;
+    const end = to.input.value? new Date(to.input.value): null;
+    const only = bp.input.value==='All'? null : bp.input.value;
+    const byKey = new Map();
+    HT.sessions.forEach(r=>{
+      const d=new Date(r.date); if(start && d<start) return; if(end && d>end) return; if(only && r.bodypart!==only) return;
+      const k = mondayOf(r.date).toISOString().slice(0,10)+'|'+r.bodypart;
+      const sets = (r.sets||[]).filter(n=> Number(n)>0).length; if(sets===0) return;
+      byKey.set(k,(byKey.get(k)||0)+sets);
+    });
+    return [...byKey.entries()].map(([k,v])=>{ const [w,b]=k.split('|'); return {week:w,bp:b,total:v} }).sort((a,b)=> new Date(a.week)-new Date(b.week) || a.bp.localeCompare(b.bp));
+  }
+
+  function renderAll(){
+    const rows=weeklyRows();
+    const tbody=document.getElementById('volBody');
+    tbody.innerHTML = rows.map(r=>`<tr><td>${fmtDate(r.week)}</td><td>${esc(r.bp)}</td><td>${r.total}</td></tr>`).join('');
+
+    const weeks=[...new Set(rows.map(r=>r.week))].sort((a,b)=> new Date(a)-new Date(b));
+    const weekLabels = weeks.map(w=> new Date(w).toLocaleDateString());
+
+    if(bp.input.value==='All'){
+      const parts = [...new Set(rows.map(r=> r.bp))].sort();
+      const datasets = parts.map(part=>({
+        label: part,
+        data: weeks.map(w=> rows.filter(r=> r.week===w && r.bp===part).reduce((s,x)=> s+x.total,0)),
+        tension:.3,
+        fill:false
+      }));
+      chart.data.labels = weekLabels;
+      chart.data.datasets = datasets;
+    } else {
+      const part = bp.input.value;
+      chart.data.labels = weekLabels;
+      chart.data.datasets = [{
+        label: part,
+        data: weeks.map(w=> rows.filter(r=> r.week===w && r.bp===part).reduce((s,x)=> s+x.total,0)),
+        tension:.3,
+        fill:false
+      }];
+    }
+    chart.update();
+  }
+
+  apply.onclick=renderAll; renderAll();
+}
+
+// --- View: Exercise Library (manage DB) ---
+function viewLibrary(){
+  content.innerHTML='';
+
+  // Add new exercise
+  const addCard=document.createElement('div'); addCard.className='card grid c3';
+  const bpSel = selectField('Body Part', bodyParts());
+  const exName = field('Exercise name','text','');
+  const addBtn = document.createElement('button'); addBtn.className='btn primary'; addBtn.textContent='Add Exercise';
+  addBtn.onclick=()=>{
+    const bp=bpSel.input.value.trim(); const name=exName.input.value.trim();
+    if(!bp || !name) return alert('Pick a body part and enter a name.');
+    const exists = (HT.library[bp]||[]).some(e=> e.toLowerCase()===name.toLowerCase());
+    if(exists) return alert('That exercise already exists in this body part.');
+    HT.library[bp] = HT.library[bp] || []; HT.library[bp].push(name); HT.library[bp].sort(); saveLibrary(); exName.input.value=''; renderTable();
+  };
+  addCard.append(bpSel.wrap, exName.wrap, addBtn);
+  content.appendChild(addCard);
+
+  // Table of exercises
+  const tblCard=document.createElement('div'); tblCard.className='card';
+  tblCard.innerHTML='<div class="table-wrap"><table><thead><tr><th>Body Part</th><th>Exercise</th><th></th></tr></thead><tbody id="libBody"></tbody></table></div>';
+  content.appendChild(tblCard);
+
+  function renderTable(){
+    const tbody=document.getElementById('libBody'); tbody.innerHTML='';
+    const rows = Object.entries(HT.library).flatMap(([bp,list])=> list.map(name=>({bp,name}))).sort((a,b)=> a.bp.localeCompare(b.bp)||a.name.localeCompare(b.name));
+    rows.forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${esc(r.bp)}</td><td>${esc(r.name)}</td><td><button class="btn warn">Delete</button></td>`;
+      tr.querySelector('button').onclick=()=>{
+        if(confirm('Delete this exercise?')){
+          HT.library[r.bp] = (HT.library[r.bp]||[]).filter(n=> n!==r.name);
+          if(HT.library[r.bp].length===0) delete HT.library[r.bp];
+          saveLibrary(); renderTable();
+        }
+      };
+      tbody.appendChild(tr);
+    });
+  }
+
+  renderTable();
+}
+
+// --- View: Backup / Import ---
+function viewBackup(){
+  content.innerHTML='';
+  const card=document.createElement('div'); card.className='card grid c2';
+  const exp=document.createElement('button'); exp.className='btn primary'; exp.textContent='Export JSON (Library + Log)'; exp.onclick=exportJSON;
+  const imp=document.createElement('input'); imp.type='file'; imp.accept='.json'; imp.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const o=JSON.parse(rd.result); if(o.library) HT.library=o.library; if(o.sessions) HT.sessions=o.sessions; saveLibrary(); save(); alert('Import complete.'); render(); }catch(err){ alert('Import failed: '+err.message) } }; rd.readAsText(f) };
+  card.append(exp, imp); content.appendChild(card);
+}
+
+function exportJSON(){
+  const data = JSON.stringify({ sessions: HT.sessions, library: HT.library }, null, 2);
+  const blob = new Blob([data], {type:'application/json'});
+  const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='hypertrophy_tracker_backup.json'; a.click(); URL.revokeObjectURL(url);
+  localStorage.setItem(HT.keys.remindNext, String(Date.now()+7*24*3600*1000));
+}
+
+// ---- Small UI field helpers ----
+function field(labelText, type='text', value=''){
+  const wrap=document.createElement('div'); wrap.className='grid';
+  const label=document.createElement('label'); label.textContent=labelText; const input=document.createElement('input'); input.type=type; input.value=value; wrap.append(label,input); return {wrap,input};
+}
+function textarea(labelText, value=''){
+  const wrap=document.createElement('div'); wrap.className='grid';
+  const label=document.createElement('label'); label.textContent=labelText; const ta=document.createElement('textarea'); ta.rows=2; ta.value=value; wrap.append(label,ta); return {wrap,input:ta};
+}
+function selectField(labelText, options){
+  const wrap=document.createElement('div'); wrap.className='grid';
+  const label=document.createElement('label'); label.textContent=labelText; const sel=document.createElement('select'); sel.innerHTML='<option value="">Select…</option>'+options.map(o=>`<option>${esc(o)}</option>`).join(''); wrap.append(label,sel); return {wrap,input:sel};
+}
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=> ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])) }
+
+// Render app
+render();
+
+// --- Quick self-check tests (no DOM change) ---
+console.assert(!!window.HT, 'HT namespace missing');
+console.assert(!!window.HT.library && Object.keys(window.HT.library).length>0, 'Exercise library missing');
+console.assert(!!window.DEFAULT_LIBRARY && Object.keys(window.DEFAULT_LIBRARY).length>=7, 'DEFAULT_LIBRARY missing');
+console.assert(bodyParts().includes('Biceps') && bodyParts().includes('Quads'), 'Expected body parts not found');
+console.assert(!('exercises' in window), 'Global leak: exercises should not be on window');
+</script>
 </body>
 </html>
